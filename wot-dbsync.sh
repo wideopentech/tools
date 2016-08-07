@@ -78,20 +78,21 @@ do_sync () {
   f=${h}_${t}_${d}.sql
   F=${H}_${t}_${D}.sql
 
-  # Export
+  # Export source database
   if [[ ! -z ${s} ]] ; then
     export_ssh ${s} ${m} ${h} ${u} ${p} ${d} ${o} ${f}
   else
     export_mysql ${m} ${h} ${u} ${p} ${o} ${f} ${d}
   fi
 
+  # Export destination database
   if [[ ! -z ${S} ]] ; then
     export_ssh ${S} ${M} ${H} ${U} ${P} ${D} ${o} ${F}
   else
     export_mysql ${M} ${H} ${U} ${P} ${o} ${F} ${D}
   fi
 
-  # Import
+  # Import source database or exit
   if [[ -e ${o}/${f} && -s ${o}/${f} ]] ; then
     if [[ -e ${o}/${F} && -s ${o}/${F} ]] ; then
       if [[ ${command} == "sync" ]] ; then
@@ -105,10 +106,10 @@ do_sync () {
         success "exported ${h}/${d} and ${H}/${D} to ${o}"
       fi
     else
-      fail "database '${D}' from ${H} incomplete or unavailable"
+      fail "database '${D}' from ${H} is incomplete or unavailable"
     fi
   else
-    fail "database '${d}' from ${h} incomplete or unavailable"
+    fail "database '${d}' from ${h} is incomplete or unavailable"
   fi
 }
 

@@ -1,29 +1,40 @@
 #!/bin/bash
 #
 # WHAT ============================================================
-#   Connects to MySQL over ports -m and -M on servers -h and -H,
-#   exports databases -d and -D, then saves the files at -o.
-#   If files for -d and -D exist at -o and are non-zero, -D is
-#   overwritten with the saved export of -d. Optional invocations
-#   can be used to connect to -h or -H over SSH, or to save exports
-#   of -d and -D at -o without -D being overwritten.
+#   Connects to MySQL over port -m on a source host -h and exports
+#   a database -d to -o. If a user@host string -s is passed, the
+#   MySQL connection to the source host -h will be opened locally
+#   through SSH. This process is repeated over port -M for a
+#   destination host -H, with a database -D also exported to -o.
+#   If a user@host string -S is passed, the MySQL connection to the
+#   destination host -H will be opened locally through SSH.
+#
+#   If both exports succeed and the script is invoked with the sync
+#   command, the destination hosts database -D will be overwritten
+#   with the export of the source hosts database -d. If the script
+#   is instead invoked with the backup command, execution completes
+#   after the exports of -d and -D are created, or returns an error
+#   if either export appears to have failed.
 #
 # USAGE ===========================================================
-#   $ ./wot-dbsync sync -s user@host -m port -d db -h host -u user -p pass -S user@host -M port -D db -H host -U user -P pass -o export/path
+#   $ ./wot-dbsync sync -s user@host -m port -h host -u user -p pass -d db -S user@host -M port -H host -U user -P pass -D db -o export/path
 #   ( ) = optional, (*) = required:
-#   where -s = ( ) when connecting to source, use ssh string -s
-#         -m = (*) connect to mysql over port -m on source
-#         -d = (*) export database -d from source
-#         -h = (*) connect to mysql host -h on source
-#         -u = (*) login as user -u on source
-#         -p = (*) login with password -p on source
-#         -S = ( ) when connecting to destination, use ssh string -s
-#         -M = (*) connect to mysql over port -M on destination
-#         -D = (*) export database -D from destination
-#         -H = (*) connect to mysql host -H on destination
-#         -U = (*) login as user -U on destination
-#         -P = (*) login with password -p on destination
-#         -o = (*) export path (no trailing slash)
+#   where -s = ( ) source: route through ssh connection -s
+#         -m = (*) source: connect to mysql over port -m
+#         -h = (*) source: connect to mysql host -h
+#         -u = (*) source: login as user -u
+#         -p = (*) source: login with password -p
+#         -d = (*) source: export database -d
+#   and
+#   where -S = ( ) destination: route through ssh connection -S
+#         -M = (*) destination: connect to mysql over port -M
+#         -H = (*) destination: connect to mysql host -H
+#         -U = (*) destination: login as user -U
+#         -P = (*) destination: login with password -P
+#         -D = (*) destination: export database -D
+#
+#     and -o = (*) store database exports at -o,
+#                  n.b. no trailing slash!
 #
 #   $ ./wot-dbsync backup ...
 #   where ... = params as outlined above
@@ -47,102 +58,98 @@ timestamp () {
 }
 
 export_ssh () {
-  # ssh, port, host, user, pass, data, path, file
   ssh ${1} "mysqldump --add-drop-table -P ${2} -h ${3} -u ${4} -p${5} ${6}" > ${7}/${8}
 }
 
 export_mysql () {
-  # port, host, user, pass, path, file, data
   mysqldump --add-drop-table -P ${1} -h ${2} -u ${3} -p${4} -r ${5}/${6} ${7} 2>/dev/null
 }
 
 import_ssh () {
-  # ssh, port, host, user, pass, data, path, file
   ssh ${1} "mysql -P ${2} -h ${3} -u ${4} -p${5} ${6}" < ${7}/${8}
 }
 
 import_mysql () {
-  # port, host, user, pass, data, path, file
   mysql -P ${1} -h ${2} -u ${3} -p${4} ${5} < ${6}/${7} 2>/dev/null
 }
 
 do_sync () {
-  stamp=$(timestamp)
-  afile=${ahost}_${stamp}_${adata}.sql
-  bfile=${bhost}_${stamp}_${bdata}.sql
+  t=$(timestamp)
+  f=${h}_${t}_${d}.sql
+  F=${H}_${t}_${D}.sql
 
   # Export
-  if [[ ! -z ${sshca} ]] ; then
-    export_ssh ${sshca} ${aport} ${ahost} ${auser} ${apass} ${adata} ${path} ${afile}
+  if [[ ! -z ${s} ]] ; then
+    export_ssh ${s} ${m} ${h} ${u} ${p} ${d} ${o} ${f}
   else
-    export_mysql ${aport} ${ahost} ${auser} ${apass} ${path} ${afile} ${adata}
+    export_mysql ${m} ${h} ${u} ${p} ${o} ${f} ${d}
   fi
 
-  if [[ ! -z ${sshcb} ]] ; then
-    export_ssh ${sshcb} ${bport} ${bhost} ${buser} ${bpass} ${bdata} ${path} ${bfile}
+  if [[ ! -z ${S} ]] ; then
+    export_ssh ${S} ${M} ${H} ${U} ${P} ${D} ${o} ${F}
   else
-    export_mysql ${bport} ${bhost} ${buser} ${bpass} ${path} ${bfile} ${bdata}
+    export_mysql ${M} ${H} ${U} ${P} ${o} ${F} ${D}
   fi
 
   # Import
-  if [[ -e ${path}/${afile} && -s ${path}/${afile} ]] ; then
-    if [[ -e ${path}/${bfile} && -s ${path}/${bfile} ]] ; then
-      if [[ ${action} == "sync" ]] ; then
-        if [[ ! -z ${sshcb} ]] ; then
-          import_ssh ${sshcb} ${bport} ${bhost} ${buser} ${bpass} ${bdata} ${path} ${afile}
+  if [[ -e ${o}/${f} && -s ${o}/${f} ]] ; then
+    if [[ -e ${o}/${F} && -s ${o}/${F} ]] ; then
+      if [[ ${command} == "sync" ]] ; then
+        if [[ ! -z ${S} ]] ; then
+          import_ssh ${S} ${M} ${H} ${U} ${P} ${D} ${o} ${f}
         else
-          import_mysql ${bport} ${bhost} ${buser} ${bpass} ${bdata} ${path} ${afile}
+          import_mysql ${M} ${H} ${U} ${P} ${D} ${o} ${f}
         fi
-        success "synced ${ahost}/${adata} to ${bhost}/${bdata} using ${path}/${afile}"
+        success "synced ${h}/${d} to ${H}/${D} using ${o}/${f}"
       else
-        success "exported ${ahost}/${adata} and ${bhost}/${bdata} to ${path}"
+        success "exported ${h}/${d} and ${H}/${D} to ${o}"
       fi
     else
-      fail "${bhost} database incomplete or unavailable"
+      fail "database '${D}' from ${H} incomplete or unavailable"
     fi
   else
-    fail "${ahost} database incomplete or unavailable"
+    fail "database '${d}' from ${h} incomplete or unavailable"
   fi
 }
 
 if [[ ${1} == "sync" || ${1} == "backup" ]] ; then
-  action=${1}
+  command=${1}
   shift
-  args=$(getopt s:m:d:h:u:p:S:M:D:H:U:P:o: $*)
+  args=$(getopt s:m:h:u:p:d:S:M:H:U:P:D:o: $*)
   set -- $args
   for i ; do
     case "$i" in
-      -s ) sshca="${2}"
+      -s ) s="${2}"
            shift ; shift ;;
-      -m ) aport="${2}"
+      -m ) m="${2}"
            shift ; shift ;;
-      -d ) adata="${2}"
+      -h ) h="${2}"
            shift ; shift ;;
-      -h ) ahost="${2}"
+      -u ) u="${2}"
            shift ; shift ;;
-      -u ) auser="${2}"
+      -p ) p="${2}"
            shift ; shift ;;
-      -p ) apass="${2}"
+      -d ) d="${2}"
            shift ; shift ;;
-      -S ) sshcb="${2}"
+      -S ) S="${2}"
            shift ; shift ;;
-      -M ) bport="${2}"
+      -M ) M="${2}"
            shift ; shift ;;
-      -D ) bdata="${2}"
+      -H ) H="${2}"
            shift ; shift ;;
-      -H ) bhost="${2}"
+      -U ) U="${2}"
            shift ; shift ;;
-      -U ) buser="${2}"
+      -P ) P="${2}"
            shift ; shift ;;
-      -P ) bpass="${2}"
+      -D ) D="${2}"
            shift ; shift ;;
-      -o ) path="${2}"
+      -o ) o="${2}"
            shift ; shift ;;
       -- ) shift ; break ;;
     esac
   done
-  if [[ ! -z ${aport} && ! -z ${adata} && ! -z ${ahost} && ! -z ${auser} && ! -z ${apass} && ! -z ${bport} && ! -z ${bdata} && ! -z ${bhost} && ! -z ${buser} && ! -z ${bpass} && ! -z ${path} ]] ; then
-    do_sync ${action} ${sshca} ${aport} ${adata} ${ahost} ${auser} ${apass} ${sshcb} ${bport} ${bdata} ${bhost} ${buser} ${bpass} ${path}
+  if [[ ! -z ${m} && ! -z ${h} && ! -z ${u} && ! -z ${p} && ! -z ${d} && ! -z ${M} && ! -z ${H} && ! -z ${U} && ! -z ${P} && ! -z ${D} && ! -z ${o} ]] ; then
+    do_sync ${command} ${s} ${m} ${h} ${u} ${p} ${d} ${S} ${M} ${H} ${U} ${P} ${D} ${o}
   else
     fail "invalid or missing arguments"
   fi

@@ -24,14 +24,14 @@
 #         -m = ( ) source: connect to mysql over port -m [default = 3306]
 #         -h = (*) source: connect to mysql host -h
 #         -u = (*) source: login as user -u
-#         -p = ( ) source: login with password -p [default = empty]
+#         -p = (*) source: login with password -p
 #         -d = (*) source: export database -d
 #   and
 #   where -S = ( ) destination: route through ssh connection -S
 #         -M = ( ) destination: connect to mysql over port -M [default = 3306]
 #         -H = (*) destination: connect to mysql host -H
 #         -U = (*) destination: login as user -U
-#         -P = ( ) destination: login with password -P [default = empty]
+#         -P = (*) destination: login with password -P
 #         -D = (*) destination: export database -D
 #
 #     and -o = (*) store database exports at -o,
@@ -44,9 +44,9 @@
 # - NOTE ----------------------------------------------------------
 #   If an optional argument has a default value, omitting its flag
 #   during command invocation will cause that default value to be
-#   passed. As an example, if the MySQL user you intend to login as
-#   on destination host -H does not have a password defined, omit
-#   the -P flag to pass the default (empty) password.
+#   passed. As an example, if the MySQL port you intend to connect
+#   over on the source host is 3306, simply omit the -m flag to
+#   pass the default (3306) value.
 #
 # Created: 05-Aug-2016
 
@@ -67,19 +67,19 @@ timestamp () {
 }
 
 export_ssh () {
-  ssh ${1} "mysqldump --add-drop-table -P ${2} -h ${3} -u ${4} --password='${5}' ${6}" > ${7}/${8}
+  ssh ${1} "mysqldump --add-drop-table -P ${2} -h ${3} -u ${4} -p${5} ${6}" > ${7}/${8}
 }
 
 export_mysql () {
-  mysqldump --add-drop-table -P ${1} -h ${2} -u ${3} --password='${4}' -r ${5}/${6} ${7} 2>/dev/null
+  mysqldump --add-drop-table -P ${1} -h ${2} -u ${3} -p${4} -r ${5}/${6} ${7} 2>/dev/null
 }
 
 import_ssh () {
-  ssh ${1} "mysql -P ${2} -h ${3} -u ${4} --password='${5}' ${6}" < ${7}/${8}
+  ssh ${1} "mysql -P ${2} -h ${3} -u ${4} -p${5} ${6}" < ${7}/${8}
 }
 
 import_mysql () {
-  mysql -P ${1} -h ${2} -u ${3} --password='${4}' ${5} < ${6}/${7} 2>/dev/null
+  mysql -P ${1} -h ${2} -u ${3} -p${4} ${5} < ${6}/${7} 2>/dev/null
 }
 
 do_sync () {
@@ -89,16 +89,16 @@ do_sync () {
 
   # Export source database
   if [[ ! -z ${s} ]] ; then
-    export_ssh ${s} ${m} ${h} ${u} "${p}" ${d} ${o} ${f}
+    export_ssh ${s} ${m} ${h} ${u} ${p} ${d} ${o} ${f}
   else
-    export_mysql ${m} ${h} ${u} "${p}" ${o} ${f} ${d}
+    export_mysql ${m} ${h} ${u} ${p} ${o} ${f} ${d}
   fi
 
   # Export destination database
   if [[ ! -z ${S} ]] ; then
-    export_ssh ${S} ${M} ${H} ${U} "${P}" ${D} ${o} ${F}
+    export_ssh ${S} ${M} ${H} ${U} ${P} ${D} ${o} ${F}
   else
-    export_mysql ${M} ${H} ${U} "${P}" ${o} ${F} ${D}
+    export_mysql ${M} ${H} ${U} ${P} ${o} ${F} ${D}
   fi
 
   # Import source database or exit
@@ -106,9 +106,9 @@ do_sync () {
     if [[ -e ${o}/${F} && -s ${o}/${F} ]] ; then
       if [[ ${command} == "sync" ]] ; then
         if [[ ! -z ${S} ]] ; then
-          import_ssh ${S} ${M} ${H} ${U} "${P}" ${D} ${o} ${f}
+          import_ssh ${S} ${M} ${H} ${U} ${P} ${D} ${o} ${f}
         else
-          import_mysql ${M} ${H} ${U} "${P}" ${D} ${o} ${f}
+          import_mysql ${M} ${H} ${U} ${P} ${D} ${o} ${f}
         fi
         success "synced ${h}/${d} to ${H}/${D} using ${o}/${f}"
       else
@@ -158,8 +158,8 @@ if [[ ${1} == "sync" || ${1} == "backup" ]] ; then
       -- ) shift ; break ;;
     esac
   done
-  if [[ ! -z ${h} && ! -z ${u} && ! -z ${d} && ! -z ${H} && ! -z ${U} && ! -z ${D} && ! -z ${o} ]] ; then
-    do_sync ${command} ${s} ${m:=3306} ${h} ${u} ${p:=""} ${d} ${S} ${M:=3306} ${H} ${U} ${P:=""} ${D} ${o}
+  if [[ ! -z ${h} && ! -z ${u} && ! -z ${p} && ! -z ${d} && ! -z ${H} && ! -z ${U} && ! -z ${P} && ! -z ${D} && ! -z ${o} ]] ; then
+    do_sync ${command} ${s} ${m:=3306} ${h} ${u} ${p} ${d} ${S} ${M:=3306} ${H} ${U} ${P} ${D} ${o}
   else
     fail "invalid or missing arguments"
   fi
